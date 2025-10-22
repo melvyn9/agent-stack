@@ -1,0 +1,28 @@
+services:
+  dispatcher:
+    build: ./dispatcher
+    container_name: agent-dispatcher
+    environment:
+      - AGENT_IMAGE=agent-template:latest
+      - NETWORK_NAME=agent-stack_agent_net
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+      - AWS_REGION=us-west-2
+      - BEDROCK_MODEL_ID=amazon.titan-text-lite-v1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - agent_net
+    ports:
+      - "7000:7000"
+
+  agent-template:
+    build: ./agent
+    image: agent-template:latest
+    networks:
+      - agent_net
+
+networks:
+  agent_net:
+    driver: bridge
