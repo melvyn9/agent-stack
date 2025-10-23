@@ -1,0 +1,20 @@
+# Ignore environment files
+.env
+__pycache__/
+*.pyc
+*.log
+
+# Ignore Docker build artifacts
+*.pid
+*.sock
+*.db
+*.sqlite
+*.zip
+awscliv2.zip
+
+# Ignore local system files
+.DS_Store
+.idea/
+.vscode/
+
+temp.txt

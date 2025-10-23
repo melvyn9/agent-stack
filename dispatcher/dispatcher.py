@@ -39,7 +39,7 @@ def ensure_agent(c,user):
 async def proxy(user,sess,payload):
     c=client()
     name=ensure_agent(c,user)
-    url=f"http://{name}:8080/chat"
+    url=f"http://{name}:8080/agent"
     async with httpx.AsyncClient(timeout=60) as cli:
         r=await cli.post(url,params={"user_id":user,"session_id":sess},json=payload)
         r.raise_for_status()
