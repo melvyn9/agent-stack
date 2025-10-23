@@ -14,9 +14,10 @@ Each user gets their **own isolated container** that connects to **AWS Bedrock**
 - **SSH in:**
   ```bash
   ssh -i <your-key.pem> ubuntu@<EC2_PUBLIC_IP>
+  ```
 
 ## 2. System Setup on EC2
-The following has already been installed on the instance. Only do this if starting from a brand new instance or if 5. Running the Stack does not work.
+The following has already been installed on the instance. Only do this if starting from a brand new instance or if [5. Running the Stack](#5-running-the-stack) does not work.  
 Install dependencies and tools:
 ```bash
 sudo apt-get update -y && sudo apt-get upgrade -y
@@ -95,8 +96,9 @@ agent-dispatcher               Up 2 minutes
 agent-alice                    Up 1 minute
 agent-bob                      Up 10 seconds
 ```
-Each user = one isolated agent container.
-Each session ID = a conversation thread inside that same container.
+Each user = one isolated agent container.  
+Each session ID = a conversation thread inside that same container.  
+More on this explained later.
 
 ## 7. Sending Chat Requests
 ```bash
@@ -137,13 +139,13 @@ This ensures that every user runs in their **own environment**, with separate AW
 
 **Example:**
 ```bash
-# Create or reuse Alice's agent
-curl -X POST "http://localhost:7000/u/alice/chat?session_id=s1" \
+# Reusing Alice's agent but a different session in the same container. Notice session_id=s2 to represent a different session in the same container.
+curl -X POST "http://localhost:7000/u/alice/chat?session_id=s2" \
   -H "Content-Type: application/json" \
   -d '{"message":"Hello, what can you do?"}'
 
 # Create or reuse Bob's agent (in a separate container)
-curl -X POST "http://localhost:7000/u/bob/chat?session_id=s1" \
+curl -X POST "http://localhost:7000/u/bob/chat?session_id=s2" \
   -H "Content-Type: application/json" \
   -d '{"message":"Explain container isolation"}'
 ```
@@ -165,7 +167,7 @@ even though they share the same network, they cannot interfere with each other.
 ### Understanding session_id
 The session_id parameter keeps track of conversation continuity within a single user’s container.
 - Each new session_id starts a fresh conversation.
-- Using the same session_id allows messages to be part of the same session context (for memory, if added later).
+- Using the same session_id allows messages to be part of the same session context (for memory to add later in Phase2, for now ignore).
 
 ```bash
 # Continuing the same session for Alice
