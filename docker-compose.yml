@@ -5,9 +5,6 @@ services:
     environment:
       - AGENT_IMAGE=agent-template:latest
       - NETWORK_NAME=agent-stack_agent_net
-      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
-      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
-      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
       - AWS_REGION=us-west-2
       - BEDROCK_MODEL_ID=amazon.titan-text-lite-v1
     volumes:

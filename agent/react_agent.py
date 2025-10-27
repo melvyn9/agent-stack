@@ -107,8 +107,8 @@ class LangGraphReActAgent:
             **model_kwargs: Additional arguments for the model
         """
         self.use_memory = use_memory
-        self.model = BedRockChatModel()
-        # self.model = ChatOpenAI(model_name="gpt-4o-2024-08-06")
+        # self.model = BedRockChatModel()
+        self.model = ChatOpenAI(model_name="gpt-3.5-turbo-0125")
         
         # Define tools list
         self.tools = [
@@ -120,14 +120,14 @@ class LangGraphReActAgent:
         ]
         
         # Bind tools to the model so it knows about them
-        self.model_with_tools = self.model.bind_tools(self.tools)
+        # self.model_with_tools = self.model.bind_tools(self.tools)
 
         # Initialize checkpointer for memory
         self.checkpointer = None
         
         # Create the ReAct agent with our tools
         self.agent = create_react_agent(
-            self.model_with_tools,
+            self.model,
             self.tools,
             checkpointer=self.checkpointer,
         )

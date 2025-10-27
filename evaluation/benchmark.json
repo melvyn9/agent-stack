@@ -1,0 +1,376 @@
+{
+  "benchmark_info": {
+    "description": "Test request set for evaluating agent context/memory management - Updated for agent-stack tools",
+    "total_users": 2,
+    "total_requests": 34,
+    "requests_per_user": "User1: 18 requests, User2: 16 requests",
+    "agent_info": {
+      "type": "LangGraph ReAct Agent",
+      "llm": "AWS Bedrock - amazon.titan-text-lite-v1",
+      "tools": ["calculator", "search_web_with_content", "fetch_web_page", "read_file", "reddit_search"]
+    }
+  },
+  "users": [
+    {
+      "user_id": "User1_TechResearcher",
+      "profile": {
+        "description": "Tech researcher who needs to gather information from multiple sources",
+        "preferences": {
+          "interests": ["AI/ML", "Python programming", "open-source"],
+          "research_style": "comprehensive research with multiple sources"
+        }
+      },
+      "sessions": [
+        {
+          "session_id": "U1_S1",
+          "session_info": {
+            "context_length": "medium (5 turns)",
+            "tools_required": ["search_web_with_content", "calculator"],
+            "memory_requirements": ["intra-session context accumulation", "user preference establishment"]
+          },
+          "requests": [
+            {
+              "turn": 1,
+              "request": "I'm researching transformer models in NLP. Search for recent information about transformer architectures."
+            },
+            {
+              "turn": 2,
+              "request": "Based on what you found, how many parameters does GPT-3 have?"
+            },
+            {
+              "turn": 3,
+              "request": "If a model has 175 billion parameters and each parameter is stored as a 16-bit float, calculate how many gigabytes of memory it needs."
+            },
+            {
+              "turn": 4,
+              "request": "That's interesting. Now search for information about efficient training methods for large language models."
+            },
+            {
+              "turn": 5,
+              "request": "Based on the training methods you found, which one would be most suitable for training a model of the size we calculated earlier?"
+            }
+          ],
+          "baseline_weakness_targets": [
+            "Should remember transformer research topic across turns",
+            "Should recall GPT-3 parameter count from turn 2",
+            "Should remember calculated memory size (350GB) for later reference",
+            "Should establish user's interest in AI/ML for future sessions"
+          ]
+        },
+        {
+          "session_id": "U1_S2",
+          "session_info": {
+            "context_length": "long (13 turns)",
+            "tools_required": ["search_web_with_content", "reddit_search", "calculator"],
+            "memory_requirements": ["inter-session memory (recall interests)", "intra-session multi-step research", "user preference reinforcement"]
+          },
+          "requests": [
+            {
+              "turn": 1,
+              "request": "Remember I'm interested in AI and ML? I want to learn Python for machine learning. Search for beginner-friendly Python ML libraries."
+            },
+            {
+              "turn": 2,
+              "request": "Which library from your search results is most popular for beginners?"
+            },
+            {
+              "turn": 3,
+              "request": "Search Reddit for opinions on learning that library - check r/learnmachinelearning."
+            },
+            {
+              "turn": 4,
+              "request": "Based on the Reddit discussions, how long do people typically take to become proficient?"
+            },
+            {
+              "turn": 5,
+              "request": "If I dedicate 2 hours per day, calculate how many total hours that would be in 3 months."
+            },
+            {
+              "turn": 6,
+              "request": "Is that enough time based on what Reddit users mentioned?"
+            },
+            {
+              "turn": 7,
+              "request": "Search for free online courses for the ML library we discussed earlier."
+            },
+            {
+              "turn": 8,
+              "request": "Which course has the best reviews?"
+            },
+            {
+              "turn": 9,
+              "request": "Search Reddit for experiences with that specific course."
+            },
+            {
+              "turn": 10,
+              "request": "Based on all the information we've gathered, create a learning plan for me."
+            },
+            {
+              "turn": 11,
+              "request": "If the course has 40 hours of content and I study 2 hours per day, how many days will it take?"
+            },
+            {
+              "turn": 12,
+              "request": "That fits within my 3-month timeframe we calculated earlier, right?"
+            },
+            {
+              "turn": 13,
+              "request": "Summarize the complete learning plan with timeline and resources."
+            }
+          ],
+          "baseline_weakness_targets": [
+            "Must recall AI/ML interests from S1 without re-stating",
+            "Must track which library was identified (e.g., scikit-learn)",
+            "Must remember 2 hours/day and 3 months timeframe",
+            "Must recall the calculated total hours (180 hours) from turn 5",
+            "Must remember which course was selected in turn 8",
+            "Should maintain full context across 13 turns"
+          ]
+        }
+      ],
+      "total_requests": 18
+    },
+    {
+      "user_id": "User2_DeveloperProductivity",
+      "profile": {
+        "description": "Software developer looking to improve productivity and learn new technologies",
+        "preferences": {
+          "tech_stack": "Python, JavaScript",
+          "learning_goal": "master async programming",
+          "work_schedule": "9am-6pm weekdays"
+        }
+      },
+      "sessions": [
+        {
+          "session_id": "U2_S1",
+          "session_info": {
+            "context_length": "short (2 turns)",
+            "tools_required": ["search_web_with_content"],
+            "memory_requirements": ["user preference establishment (learning goal)"]
+          },
+          "requests": [
+            {
+              "turn": 1,
+              "request": "I want to master async programming in Python. Search for the best resources to learn Python asyncio."
+            },
+            {
+              "turn": 2,
+              "request": "Which of those resources is recommended for developers with intermediate Python knowledge?"
+            }
+          ],
+          "baseline_weakness_targets": [
+            "Should establish learning goal (async programming)",
+            "Should remember the resources found in turn 1"
+          ]
+        },
+        {
+          "session_id": "U2_S2",
+          "session_info": {
+            "context_length": "short (2 turns)",
+            "tools_required": ["reddit_search"],
+            "memory_requirements": ["simple query, minimal context"]
+          },
+          "requests": [
+            {
+              "turn": 1,
+              "request": "Search Reddit r/programming for discussions about developer productivity tools."
+            },
+            {
+              "turn": 2,
+              "request": "What are the top 3 most mentioned tools from those Reddit discussions?"
+            }
+          ],
+          "baseline_weakness_targets": [
+            "Should remember Reddit search results from turn 1",
+            "Should extract and summarize key tools"
+          ]
+        },
+        {
+          "session_id": "U2_S3",
+          "session_info": {
+            "context_length": "medium (4 turns)",
+            "tools_required": ["search_web_with_content", "reddit_search"],
+            "memory_requirements": ["intra-session context (learning plan building)", "user preference establishment"]
+          },
+          "requests": [
+            {
+              "turn": 1,
+              "request": "I work 9am to 6pm. Search for advice on the best time of day for developers to learn new programming concepts."
+            },
+            {
+              "turn": 2,
+              "request": "Search Reddit r/learnprogramming for opinions on morning vs evening learning."
+            },
+            {
+              "turn": 3,
+              "request": "Based on what you found, should I study async programming before or after work?"
+            },
+            {
+              "turn": 4,
+              "request": "Given my work schedule, suggest a specific daily learning schedule for me."
+            }
+          ],
+          "baseline_weakness_targets": [
+            "Should remember work schedule (9am-6pm) across turns",
+            "Should recall async programming learning goal",
+            "Should integrate advice from both web search and Reddit"
+          ]
+        },
+        {
+          "session_id": "U2_S4",
+          "session_info": {
+            "context_length": "short (1 turn)",
+            "tools_required": ["search_web_with_content"],
+            "memory_requirements": ["inter-session memory (learning goal from S1)"]
+          },
+          "requests": [
+            {
+              "turn": 1,
+              "request": "Search for common mistakes beginners make when learning the async programming topic I mentioned before."
+            }
+          ],
+          "baseline_weakness_targets": [
+            "Must recall async programming from S1 without user re-stating it",
+            "Tests critical inter-session memory with single turn"
+          ]
+        },
+        {
+          "session_id": "U2_S5",
+          "session_info": {
+            "context_length": "medium (5 turns)",
+            "tools_required": ["calculator", "search_web_with_content", "reddit_search"],
+            "memory_requirements": ["inter-session memory (work schedule, tech stack)", "intra-session calculations", "multi-step planning"]
+          },
+          "requests": [
+            {
+              "turn": 1,
+              "request": "I want to spend 10 hours per week learning. Given my work schedule we discussed, calculate how many minutes per day that would be."
+            },
+            {
+              "turn": 2,
+              "request": "Is that amount of daily practice enough to master async programming? Search for expert opinions."
+            },
+            {
+              "turn": 3,
+              "request": "Search Reddit r/python for how long it took people to become comfortable with asyncio."
+            },
+            {
+              "turn": 4,
+              "request": "Based on those Reddit experiences and my daily practice time, estimate how many weeks I'll need."
+            },
+            {
+              "turn": 5,
+              "request": "If there are productivity tools we found earlier in Reddit that could help, how might they reduce my learning time?"
+            }
+          ],
+          "baseline_weakness_targets": [
+            "Should remember work schedule from S3",
+            "Should track calculations (10 hours/week = ~85 minutes/day)",
+            "Must recall productivity tools from S2 (inter-session)",
+            "Should integrate multiple contexts (schedule, learning goal, tools)"
+          ]
+        },
+        {
+          "session_id": "U2_S6",
+          "session_info": {
+            "context_length": "short (2 turns)",
+            "tools_required": ["search_web_with_content"],
+            "memory_requirements": ["inter-session memory (tech stack, learning goal)", "intra-session context"]
+          },
+          "requests": [
+            {
+              "turn": 1,
+              "request": "Search for async programming code examples in my tech stack that I can practice with."
+            },
+            {
+              "turn": 2,
+              "request": "Which example would be best for my learning goal and current skill level?"
+            }
+          ],
+          "baseline_weakness_targets": [
+            "Must recall tech stack (Python, JavaScript) from profile/S1",
+            "Must recall async programming learning goal",
+            "Should remember skill level (intermediate) mentioned in S1"
+          ]
+        }
+      ],
+      "total_requests": 16
+    }
+  ],
+  "evaluation_framework": {
+    "metrics": {
+      "task_completion_rate": {
+        "description": "Percentage of requests successfully completed with correct and relevant responses",
+        "measurement": "Binary (success/failure) per request, aggregated as percentage"
+      },
+      "tool_call_efficiency": {
+        "description": "Number of tool calls made vs. optimal number needed; redundant searches indicate memory failure",
+        "measurement": "Count tool calls per request; flag redundant searches (e.g., re-searching same info)"
+      },
+      "response_quality": {
+        "description": "Relevance and accuracy of responses, especially for memory-dependent requests",
+        "measurement": "Scale 1-5: 5=perfect recall and response, 1=complete memory failure",
+        "key_indicators": [
+          "Correctly recalls user preferences without asking again",
+          "References previous session information accurately",
+          "Maintains context within long conversations",
+          "Provides personalized responses based on user profile"
+        ]
+      },
+      "memory_failure_count": {
+        "description": "Number of times agent fails to recall established information",
+        "examples": [
+          "Asks user to repeat preferences after they were stated",
+          "Forgets which library/tool was selected",
+          "Loses track of calculations or numbers",
+          "Doesn't remember topic from previous session"
+        ]
+      },
+      "context_loss_instances": {
+        "description": "Points where agent loses track of conversation context",
+        "measurement": "Count instances where agent gives irrelevant response or asks for already-provided info"
+      }
+    },
+    "baseline_weaknesses_to_expose": [
+      "No inter-session memory: Agent won't recall preferences, topics, or previous discussions from earlier sessions",
+      "Limited intra-session context: In long conversations (10+ turns), agent may forget earlier turns",
+      "Redundant tool usage: Without memory, agent re-searches information already found",
+      "No user profile persistence: Preferences and interests must be re-stated each session",
+      "Context accumulation failure: Multi-step tasks lose intermediate results",
+      "No computational memory: Previous calculations not recalled, requiring re-computation"
+    ],
+    "expected_baseline_failures": {
+      "User1_S2_Turn1": "Agent likely won't recall AI/ML interests from S1",
+      "User1_S2_Turn7": "Agent likely won't remember which ML library was identified earlier in session",
+      "User1_S2_Turn12": "Agent likely won't recall the calculated hours (180) from turn 5",
+      "User2_S4_Turn1": "Agent likely won't recall async programming topic from S1 (critical inter-session test)",
+      "User2_S5_Turn5": "Agent likely won't remember the productivity tools from S2",
+      "User2_S6_Turn1": "Agent likely won't recall tech stack (Python/JavaScript) from profile",
+      "User2_S3_Turn3": "Agent may lose context of work schedule stated in turn 1",
+      "User1_S1_Turn5": "Agent may forget the calculated memory size from turn 3"
+    }
+  },
+  "testing_procedure": {
+    "setup": "Deploy agent WITHOUT any context/memory management system (current baseline state)",
+    "isolation": "Each session should be run as separate conversation instance (using different thread_ids)",
+    "api_endpoint": "POST http://35.90.21.61:7000/u/{user}/agent?session_id={session_id}",
+    "request_format": {
+      "method": "POST",
+      "headers": {"Content-Type": "application/json"},
+      "body": {"message": "<request_text>"}
+    },
+    "data_collection": [
+      "Record all agent responses",
+      "Log all tool calls made",
+      "Note instances where agent asks for previously provided information",
+      "Track response quality scores",
+      "Document specific memory failures"
+    ],
+    "analysis": [
+      "Calculate metrics for each user and overall",
+      "Identify patterns in memory failures",
+      "Compare performance between short vs. long context requests",
+      "Document qualitative examples of baseline weaknesses"
+    ]
+  }
+}

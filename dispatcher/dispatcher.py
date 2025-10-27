@@ -5,6 +5,7 @@ AGENT_IMAGE = os.getenv("AGENT_IMAGE","agent-template:latest")
 NETWORK_NAME = os.getenv("NETWORK_NAME","agent_net")
 BEDROCK_REGION = os.getenv("AWS_REGION", "us-west-2")
 BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "amazon.titan-text-lite-v1")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 app = FastAPI(title="Dispatcher")
 
@@ -25,25 +26,35 @@ def ensure_agent(c,user):
         env = {
                 "BEDROCK_REGION": BEDROCK_REGION,
                 "BEDROCK_MODEL_ID": BEDROCK_MODEL_ID,
-                "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID", ""),
-                "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY", ""),
-                "AWS_SESSION_TOKEN": os.getenv("AWS_SESSION_TOKEN", ""),
+                "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
                 "AWS_REGION": os.getenv("AWS_REGION", "us-west-2"),
                 "TAVILY_API_KEY": os.getenv("TAVILY_API_KEY", ""),
                 "SERPAPI_API_KEY": os.getenv("SERPAPI_API_KEY", ""),
             }
         cont=c.containers.run(AGENT_IMAGE,name=name,detach=True,environment=env,network=NETWORK_NAME)
-        time.sleep(1)
+        # Wait longer and retry to ensure container is ready
+        time.sleep(5)
         return name
 
 async def proxy(user,sess,payload):
     c=client()
     name=ensure_agent(c,user)
     url=f"http://{name}:8080/agent"
-    async with httpx.AsyncClient(timeout=60) as cli:
-        r=await cli.post(url,params={"user_id":user,"session_id":sess},json=payload)
-        r.raise_for_status()
-        return r.json()
+    
+    # Retry logic for new containers
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            async with httpx.AsyncClient(timeout=60) as cli:
+                r=await cli.post(url,params={"user_id":user,"session_id":sess},json=payload)
+                r.raise_for_status()
+                return r.json()
+        except (httpx.ConnectError, httpx.ReadTimeout) as e:
+            if attempt < max_retries - 1:
+                time.sleep(2)  # Wait before retry
+                continue
+            else:
+                raise
 
 @app.post("/u/{user}/chat")
 async def route(user:str,request:Request):
