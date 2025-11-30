@@ -1,0 +1,18 @@
+
+docker ps -a
+
+
+# Stop and remove all containers
+docker stop $(docker ps -a -q);
+docker rm $(docker ps -a -q);
+docker compose down;
+
+
+docker compose build;
+docker compose up -d
+
+# Test
+curl -X POST "http://localhost:7000/u/bob/chat?session_id=s1"   -H "Content-Type: application/json"   -d '{"message":"Explain why container isolation is useful"}'
+
+# check log of a specific container(usually microservice provider, view id by docker ps -a)
+docker logs 6f952e00f62f

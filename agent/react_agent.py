@@ -2,9 +2,16 @@ from langgraph.prebuilt import create_react_agent
 from langchain_core.tools import tool
 from langchain_core.language_models.base import BaseLanguageModel
 from langchain_openai import ChatOpenAI
+from langchain_core.outputs import ChatResult, ChatGeneration
+from langchain_core.messages import AIMessage
 
+from mem0 import MemoryClient
 from typing import List, Dict, Any, Optional, Union
 import os
+import json
+import re
+from mem0 import Memory
+
 
 # Import our custom tools
 from tools.calculator import evaluate_expression
@@ -12,7 +19,10 @@ from tools.web_search_content import search_and_fetch_content, fetch_web_content
 from tools.file_reader import read_local_file
 from tools.reddit_search import search_reddit
 from llm import BedRockChatModel
-
+# from langchain_aws import ChatBedrockConverse
+import traceback
+BEDROCK_REGION = os.getenv("BEDROCK_REGION", "us-west-2")
+BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "openai.gpt-oss-120b-1:0")
 
 @tool
 def calculator(expression: str) -> str:
@@ -107,8 +117,9 @@ class LangGraphReActAgent:
             **model_kwargs: Additional arguments for the model
         """
         self.use_memory = use_memory
-        # self.model = BedRockChatModel()
-        self.model = ChatOpenAI(model_name="gpt-3.5-turbo-0125")
+        # self.model = ChatBedrockConverse(model_id=BEDROCK_MODEL_ID, region_name=BEDROCK_REGION)
+        self.model = BedRockChatModel()
+        # self.model = ChatOpenAI(model_name="gpt-3.5-turbo-0125")
         
         # Define tools list
         self.tools = [
@@ -131,30 +142,135 @@ class LangGraphReActAgent:
             self.tools,
             checkpointer=self.checkpointer,
         )
+        # self.mem = MemoryClient()
+        config = {
+            "vector_store": {
+                "provider": "pinecone",
+                "config": {
+                    # Provider-specific settings go here
+                    "collection_name": "cse291a",
+                    "embedding_model_dims": 512,
+                    "api_key": os.getenv("PINECONE_API_KEY", ""),
+                    "serverless_config": {
+                        "cloud": "aws",
+                        "region": "us-east-1"
+                    },
+                    "metric": "cosine"
+                }
+            },
+            "llm": {
+                "provider": "openai",
+                "config": {
+                    "model": "gpt-3.5-turbo-0125",
+                }
+            },
+            "embedder": {
+                "provider": "openai",
+                "config": {
+                    "model": "text-embedding-3-small",
+                    "embedding_dims": 512
+                }
+            }
+    }
 
-    def run(self, message: str, thread_id: Optional[str] = None, system_prompt: Optional[str] = None) -> Dict[str, Any]:
-        """Run the agent with a message.
+        self.mem = Memory.from_config(config)
+
+    def extract_memories_from_output(self, text: str):
+        """
+        Expect the agent to output:
+        memory: ["fact1", "fact2", ...]
+        """
+        match = re.search(r"memory\s*:\s*(\[.*?\])", text, re.DOTALL)
+        if not match:
+            return []
+        try:
+            return json.loads(match.group(1))
+        except Exception:
+            return []
         
+    def run(self, message: str, thread_id: Optional[str] = None, system_prompt: Optional[str] = None) -> dict:
+        """Run the agent with a message.
+
         Args:
             message: The user message
             thread_id: Unique identifier for the conversation thread
             system_prompt: Optional system prompt to override default behavior
-            
+
         Returns:
-            The agent's response
+            The agent's response or error information
         """
-        config = {"configurable": {"thread_id": "default" if thread_id is None else thread_id}}
-        
-        # Prepare messages
-        messages = []
-        if system_prompt:
-            messages.append(("system", system_prompt))
-        messages.append(("human", message))
-        
-        # Get response from agent
-        response = self.agent.invoke({"messages": messages}, config=config)
-        
-        return response
-    
+        try:
+            user_id, session_id = thread_id.split("_", 1) if thread_id else ("default_user", "default_session")
+            
+            # Retrieve relevant memory
+            retrieved = self.mem.search(
+                query=message,
+                user_id=user_id,
+                run_id=session_id,
+                limit=3,
+                threshold=0.6
+            ).get("results", [])
+            print("Retrieved memory:", retrieved)
+            
+            memory_block = "\n".join(f"- {m['content']}" for m in retrieved) if retrieved else "No relevant memory retrieved."
+            memory_prefix = f"""
+    You are a ReAct agent with semantic memory.
+
+    Here are memories relevant to the user's message.
+    Use them *only if relevant*:
+
+    --- Retrieved Memory ---
+    {memory_block}
+    ------------------------
+    """
+
+            config = {"configurable": {"thread_id": thread_id or "default"}}
+
+            # Prepare messages
+            messages = []
+            if system_prompt:
+                messages.append(("system", memory_prefix + system_prompt))
+            else:
+                messages.append(("system", memory_prefix))
+            messages.append(("human", message))
+
+            # Invoke the agent
+            response = self.agent.invoke({"messages": messages}, config=config)
+
+            # Extract final text depending on type
+            final_text = ""
+            if isinstance(response, ChatResult):
+                # Use the last generation's message content
+                if response.generations:
+                    final_text = response.generations[-1].message.content
+            elif isinstance(response, dict):
+                if "messages" in response and response["messages"]:
+                    final_text = response["messages"][-1].content
+                else:
+                    # fallback for older style response
+                    final_text = response.get("output", "") or str(response)
+            else:
+                final_text = str(response)
+
+            print("Agent response:", final_text)
+            
+            # Add new memory
+            new_memories = [f"Question:{message}, Agent Answer: {final_text}"]
+            for mem_item in new_memories:
+                self.mem.add(messages=mem_item, user_id=user_id, run_id=session_id)
+
+            return {
+                "response_text": final_text,
+                # "raw_response": response
+            }
+
+        except Exception as e:
+            print("Error running agent:")
+            print(str(e))
+            traceback.print_exc()
+            return {
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }
     def chat(self, message: str):
         return self.model.invoke(message)

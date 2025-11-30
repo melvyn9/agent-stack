@@ -30,6 +30,7 @@ def ensure_agent(c,user):
                 "AWS_REGION": os.getenv("AWS_REGION", "us-west-2"),
                 "TAVILY_API_KEY": os.getenv("TAVILY_API_KEY", ""),
                 "SERPAPI_API_KEY": os.getenv("SERPAPI_API_KEY", ""),
+                "PINECONE_API_KEY": os.getenv("PINECONE_API_KEY", "")
             }
         cont=c.containers.run(AGENT_IMAGE,name=name,detach=True,environment=env,network=NETWORK_NAME)
         # Wait longer and retry to ensure container is ready

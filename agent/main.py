@@ -12,7 +12,6 @@ app = FastAPI(title="Per-User Agent")
 # Initialize agent once at startup
 agent = None
 
-
 @app.on_event("startup")
 async def startup_event():
     """Initialize the agent on startup"""
@@ -71,15 +70,14 @@ async def run_agent(
     """Run the ReAct agent with tools"""
     if not request.message or not request.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty")
-    
+
     if agent is None:
         raise HTTPException(status_code=503, detail="Agent not initialized")
-    
+
     try:
         thread_id = f"{user_id}_{session_id}" if user_id and session_id else "default"
-        
+
         response = agent.run(message=request.message, thread_id=thread_id)
-        
         return {
             "result": response,
             "user_id": user_id,

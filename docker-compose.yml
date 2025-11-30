@@ -6,19 +6,23 @@ services:
       - AGENT_IMAGE=agent-template:latest
       - NETWORK_NAME=agent-stack_agent_net
       - AWS_REGION=us-west-2
-      - BEDROCK_MODEL_ID=amazon.titan-text-lite-v1
+      - BEDROCK_MODEL_ID=openai.gpt-oss-120b-1:0
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - agent_net
     ports:
       - "7000:7000"
+    env_file:
+      - .env
 
   agent-template:
     build: ./agent
     image: agent-template:latest
     networks:
       - agent_net
+    env_file:
+      - .env
 
 networks:
   agent_net:

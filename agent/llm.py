@@ -11,7 +11,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import Field
 
 BEDROCK_REGION = os.getenv("BEDROCK_REGION", "us-west-2")
-BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "anthropic.claude-sonnet-4-20250514-v1:0")
+BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "openai.gpt-oss-120b-1:0")
 
 
 def bedrock_client():
@@ -58,6 +58,8 @@ class BedRockChatModel(BaseChatModel):
                 response_text = self._call_claude(prompt, stop=stop)
             elif "amazon.titan-text" in self.model_id.lower():
                 response_text = self._call_titan(prompt, stop=stop)
+            elif "openai.gpt-oss" in self.model_id.lower():
+                response_text = self._call_gpt_oss(messages, stop=stop)
             else:
                 raise Exception(f"Unsupported Bedrock model ID: {self.model_id}")
 
@@ -145,3 +147,34 @@ class BedRockChatModel(BaseChatModel):
         if results and "outputText" in results[0]:
             return results[0]["outputText"].strip()
         return "(no text returned)"
+    
+    def _call_gpt_oss(self, messages: List[BaseMessage], stop: Optional[List[str]] = None) -> str:
+        """Call GPT-OSS via Bedrock with structured messages."""
+        chat_messages = []
+        for msg in messages:
+            if isinstance(msg, HumanMessage):
+                chat_messages.append({"role": "user", "content": msg.content})
+            elif isinstance(msg, AIMessage):
+                chat_messages.append({"role": "assistant", "content": msg.content})
+            else:
+                chat_messages.append({"role": "system", "content": msg.content})
+
+        body = {
+            "messages": chat_messages,
+            "max_tokens": 512,
+            "temperature": 0.7,
+            "top_p": 0.9,
+        }
+        if stop:
+            body["stop"] = stop
+
+        resp = self.bedrock_client.invoke_model(
+            modelId=self.model_id,
+            body=json.dumps(body),
+            accept="application/json",
+            contentType="application/json",
+        )
+        data = json.loads(resp["body"].read())
+        # GPT-OSS returns: {"messages": [{"role": "...", "content": "..."}]}
+        print(data)
+        return data["choices"][0]["message"]["content"].strip() if "choices" in data and data["choices"] else "(no text returned)"
