@@ -148,8 +148,8 @@ class LangGraphReActAgent:
                 "provider": "pinecone",
                 "config": {
                     # Provider-specific settings go here
-                    "collection_name": "cse291a",
-                    "embedding_model_dims": 512,
+                    "collection_name": "291new",
+                    "embedding_model_dims": 1536,
                     "api_key": os.getenv("PINECONE_API_KEY", ""),
                     "serverless_config": {
                         "cloud": "aws",
@@ -168,7 +168,7 @@ class LangGraphReActAgent:
                 "provider": "openai",
                 "config": {
                     "model": "text-embedding-3-small",
-                    "embedding_dims": 512
+                    "embedding_dims": 1536
                 }
             }
     }
@@ -208,11 +208,10 @@ class LangGraphReActAgent:
                 user_id=user_id,
                 run_id=session_id,
                 limit=3,
-                threshold=0.6
-            ).get("results", [])
+            )
             print("Retrieved memory:", retrieved)
             
-            memory_block = "\n".join(f"- {m['content']}" for m in retrieved) if retrieved else "No relevant memory retrieved."
+            memory_block = "\n".join(f"- {m['memory']}" for m in retrieved.get("results", [])) if retrieved else "No relevant memory retrieved."
             memory_prefix = f"""
     You are a ReAct agent with semantic memory.
 
@@ -253,6 +252,11 @@ class LangGraphReActAgent:
                 final_text = str(response)
 
             print("Agent response:", final_text)
+            reasoning_part = None
+            
+            if "<reasoning>" in final_text:
+                reasoning_part = final_text.split("<reasoning>")[1].split("</reasoning>")[0]
+                final_text = final_text.replace(f"<reasoning>{reasoning_part}</reasoning>", "").strip()
             
             # Add new memory
             new_memories = [f"Question:{message}, Agent Answer: {final_text}"]
@@ -261,6 +265,7 @@ class LangGraphReActAgent:
 
             return {
                 "response_text": final_text,
+                "reasoning": reasoning_part,
                 # "raw_response": response
             }
 

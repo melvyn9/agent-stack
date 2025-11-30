@@ -15,6 +15,7 @@ Each user gets their **own isolated container** that connects to **AWS Bedrock**
   ```bash
   ssh -i <your-key.pem> ubuntu@<EC2_PUBLIC_IP>
   ```
+- **EBS Volume:** Grow the EBS volume from 8 GB to 64 GB. 
 
 ## 2. System Setup on EC2
 The following has already been installed on the instance. Only do this if starting from a brand new instance or if [5. Running the Stack](#5-running-the-stack) does not work.  
@@ -43,8 +44,9 @@ unzip -q awscliv2.zip && sudo ./aws/install && rm -rf aws awscliv2.zip
 ```bash
 agent-stack/
 ├─ agent/               # Template for user-specific agent containers
-│  └─ agent.py          # Each agent handles user chat, tools, and Bedrock calls
-│
+│  ├─ react_agent.py     # ReAct agent with integrated Mem0 long-term memory
+│  ├─ tools/             # Web search, Reddit search, calculator, file reader
+│  └─ ...                # Mem0 memory extraction & semantic retrieval included here
 ├─ dispatcher/          # Central manager that routes requests and spawns user agents
 │  └─ dispatcher.py     # Creates per-user containers and forwards chat requests
 │
@@ -54,12 +56,16 @@ agent-stack/
 ```
 
 ## 4. Environment Variables
-The .env file in the root directory stores temporary AWS Educate credentials. Go to https://ets-apps.ucsd.edu/individual/CSE291A_FA25_D00 and click "Generate API Keys (for CLI/scripting) for your own API keys.
+The .env file in the root directory stores temporary AWS Educate credentials. Go to https://ets-apps.ucsd.edu/individual/CSE291A_FA25_D00 and click "Generate API Keys (for CLI/scripting) for your own API keys. Mem0 uses OpenAI models for memory extraction and embedding. Without OPENAI_API_KEY, long-term memory will not work. This goes the same for long-term memorage storage using Pinecone.
 ```bash
 AWS_ACCESS_KEY_ID= Your Access Key ID
 AWS_SECRET_ACCESS_KEY= Your Secret Access Key
 AWS_SESSION_TOKEN= Your Session Key
 AWS_REGION=us-west-2
+# Required for Mem0 long-term memory (LLM extraction + embeddings)
+OPENAI_API_KEY=your_openai_api_key
+BEDROCK_MODEL_ID=the_model_you_want_to_use_defaults_to_openai.gpt-oss-120b
+PINECONE_API_KEY=your_pinecone_api_key
 ```
 
 ## 5. Running the Stack
@@ -83,6 +89,8 @@ curl http://localhost:7000/healthz
     - Connected to the shared network agent-stack_agent_net
     - Given isolated environment variables (AWS keys, model ID, region)
     - Independent from other users
+- Each user has isolated long-term memory stored in Pinecone under `user_id`.
+  Mem0 ensures that no user can access another user’s memory items.
 
 Check which containers are active:
 ```bash
@@ -98,7 +106,7 @@ agent-bob                      Up 10 seconds
 ```
 Each user = one isolated agent container.  
 Each session ID = a conversation thread inside that same container.  
-More on this explained later.
+More details are provided in later sections.
 
 ## 7. Sending Chat Requests
 ```bash
@@ -194,12 +202,19 @@ curl -X POST "http://localhost:7000/u/bob/chat?session_id=s1" \
  "answer":"Container isolation is useful because it separates applications..."}
 ```
 
+Note:
+If OPENAI_API_KEY is set and Mem0 is enabled, each request will automatically
+extract memory and store it in Pinecone. Subsequent requests for the same user
+retrieve these memories and include them in the system prompt.
+
+
 ## 8. Model Configuration
-The system defaults to Amazon Titan Text Lite, which supports on-demand invocation.
+The OSS models (gpt-oss-20b and gpt-oss-120b) support tool selection natively, making them suitable for agent workflows such as ReAct. This project will mainly use gpt-oss-20b and gpt-oss-120b because of tool calling support. The default model is set to openai.gpt-oss-120b. Information on how to switch models is documented below.
 
 These are all the models available to use on Bedrock
 | **Category** | **Provider** | **Model ID(s)** | **Purpose / Notes** |
 |---------------|--------------|-----------------|----------------------|
+| **Text Generation (OSS)** | **OpenAI (OSS via Bedrock)** | `openai.gpt-oss-20b`, `openai.gpt-oss-120b` | Open-source LLMs hosted on Bedrock. Both models support structured function/tool calling and are used for ReAct agent planning. |
 | **Text Generation** | **Amazon** | `amazon.titan-text-lite-v1`, `amazon.titan-text-express-v1`, `amazon.nova-pro-v1:0`, `amazon.nova-lite-v1:0`, `amazon.nova-micro-v1:0` | General-purpose LLMs for text generation and reasoning. Titan models support on-demand invocation. |
 | **Image Generation & Editing** | **Stability AI** | `stability.stable-image-*`, `stability.sd3-5-large-v1:0`, `stability.stable-style-transfer-v1:0` | Image creation, recoloring, style transfer, and background removal. |
 | **Text & Image Embeddings** | **Amazon** | `amazon.titan-embed-text-v1`, `amazon.titan-embed-text-v2:0`, `amazon.titan-embed-image-v1` | Converts text or images into dense vector representations for search and semantic tasks. |
@@ -219,7 +234,7 @@ In docker-compose.yml, update:
 
 to a different model
 ```bash
-- BEDROCK_MODEL_ID=amazon.nova-pro-v1:0
+- BEDROCK_MODEL_ID=openai.gpt-oss-120b
 ```
 
 Then rebuild and restart the stack
@@ -234,7 +249,7 @@ docker exec -it agent-bob bash
 echo $BEDROCK_MODEL_ID
 ```
 ### Model Compatibility Notes
-AWS Bedrock supports many different model providers (Amazon, Anthropic, Stability AI, Cohere, etc.),  
+AWS Bedrock supports many different model providers (Amazon, OpenAI, Anthropic, Stability AI, Cohere, etc.),  
 but **each provider expects a different input/output schema**.  
 Simply changing the environment variable `BEDROCK_MODEL_ID` is **not always enough** —  
 you may need to adjust the code in `agent/agent.py` depending on the model type.
@@ -254,6 +269,32 @@ else:
 If you switch to a different model family (for example, from a text model to an image model),
 you’ll need to update the code so the JSON request matches that model’s API format.
 
+## Long-Term Memory with Mem0
+
+This system uses **Mem0** to provide long-term semantic memory for each user.
+Mem0 automatically:
+
+- extracts memory from conversations using an LLM
+- stores compact memory items (facts, preferences, traits)
+- embeds them using OpenAI embedding models
+- saves them in a vector database (Pinecone)
+- retrieves relevant memories during later queries
+
+### Requirements
+
+Mem0 requires:
+- `OPENAI_API_KEY` (for LLM-based memory extraction)
+- `PINECONE_API_KEY` (for vector storage)
+- network access to Pinecone's AWS region
+
+### Where Memory Is Stored
+Memories are saved inside a Pinecone collection named `cse291a`, using metadata:
+- `user_id`
+- `run_id` (session)
+- timestamps
+
+Each user’s memories are isolated from other users.
+
 ## 9. High-Level Architecture
 ```bash
                  ┌──────────────────────────────────────────────┐
@@ -268,11 +309,14 @@ you’ll need to update the code so the JSON request matches that model’s API 
 │ agent-alice  │         │ agent-bob    │          │ agent-charlie│
 │ Port 8080    │         │ Port 8080    │          │ Port 8080    │
 │ Bedrock API  │         │ Bedrock API  │          │ Bedrock API  │
+│ Mem0         │         │ Mem0         │          │ Mem0         │
 └──────────────┘         └──────────────┘          └──────────────┘
        │                        │                         │
        ▼                        ▼                         ▼
-      AWS                  AWS Bedrock                AWS Bedrock
-   (Titan / Claude)       (LLM Models)               (Future models)
+             ┌───────────────────────────────────────────┐
+             │                 AWS Bedrock               │
+             │  (Titan, OSS 20b/120b, Cohere, Future)    │
+             └───────────────────────────────────────────┘
 ```
 - Dispatcher: central manager. Handles routing, spawns agent containers.
 
@@ -280,3 +324,27 @@ you’ll need to update the code so the JSON request matches that model’s API 
 Each instance calls Bedrock independently.
 
 - Network: all containers share a single Docker bridge network.
+
+Each agent container also includes:
+
+- **Mem0 long-term memory client** (Pinecone vector store)
+- **OpenAI LLM for memory extraction**
+
+## 10. Automated Clean Rebuild Script (Development Purposes)
+Whenever you update agent logic (e.g., react_agent.py), tools, memory handling, or model configuration, you should run a clean rebuild so every user container is recreated with the latest code.
+A helper script is included:
+
+Run a full clean rebuild
+```bash
+./scripts/clean_rebuild.sh
+```
+What the script does:
+1. The script performs all required steps:
+2. Stops the entire stack
+3. Removes all agent-<user> containers
+4. Rebuilds Docker images without cache
+5. Starts the stack
+6. Checks dispatcher health
+7. Prints instructions for generating the first user container
+
+This ensures that every user container (agent-alice, agent-bob) is recreated from the newest agent template image.

@@ -16,3 +16,11 @@ curl -X POST "http://localhost:7000/u/bob/chat?session_id=s1"   -H "Content-Type
 
 # check log of a specific container(usually microservice provider, view id by docker ps -a)
 docker logs 6f952e00f62f
+
+
+
+curl -X POST "http://localhost:7000/u/bob/chat?session_id=s1"   -H "Content-Type: application/json"   -d '{"message":"I like eating koushuiji(a classic Chinese dish) and other Sichuan foods"}'
+
+curl -X POST "http://localhost:7000/u/bob/chat?session_id=s1"   -H "Content-Type: application/json"   -d '{"message":"Based on the food I like, tell me what should I eat today"}'
+
+
