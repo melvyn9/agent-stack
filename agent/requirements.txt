@@ -18,3 +18,4 @@ html2text==2024.2.26
 mem0ai
 pinecone
 pinecone-text
+redis

@@ -44,7 +44,7 @@ unzip -q awscliv2.zip && sudo ./aws/install && rm -rf aws awscliv2.zip
 ```bash
 agent-stack/
 ├─ agent/               # Template for user-specific agent containers
-│  ├─ react_agent.py     # ReAct agent with integrated Mem0 long-term memory
+│  ├─ react_agent.py     # ReAct agent with integrated Mem0 long-term memory and redis short-term memory
 │  ├─ tools/             # Web search, Reddit search, calculator, file reader
 │  └─ ...                # Mem0 memory extraction & semantic retrieval included here
 ├─ dispatcher/          # Central manager that routes requests and spawns user agents
@@ -56,7 +56,7 @@ agent-stack/
 ```
 
 ## 4. Environment Variables
-The .env file in the root directory stores temporary AWS Educate credentials. Go to https://ets-apps.ucsd.edu/individual/CSE291A_FA25_D00 and click "Generate API Keys (for CLI/scripting) for your own API keys. Mem0 uses OpenAI models for memory extraction and embedding. Without OPENAI_API_KEY, long-term memory will not work. This goes the same for long-term memorage storage using Pinecone.
+The .env file in the root directory stores temporary AWS Educate credentials. Go to https://ets-apps.ucsd.edu/individual/CSE291A_FA25_D00 and click "Generate API Keys (for CLI/scripting) for your own API keys. Mem0 uses OpenAI models for memory extraction and embedding. Without OPENAI_API_KEY, long-term memory will not work. This is also required for Mem0 long-term memory storage using Pinecone. Redis requires no API key and works immediately inside Docker.
 ```bash
 AWS_ACCESS_KEY_ID= Your Access Key ID
 AWS_SECRET_ACCESS_KEY= Your Secret Access Key
@@ -64,8 +64,10 @@ AWS_SESSION_TOKEN= Your Session Key
 AWS_REGION=us-west-2
 # Required for Mem0 long-term memory (LLM extraction + embeddings)
 OPENAI_API_KEY=your_openai_api_key
-BEDROCK_MODEL_ID=the_model_you_want_to_use_defaults_to_openai.gpt-oss-120b
+BEDROCK_MODEL_ID=openai.gpt-oss-120b-1:0
 PINECONE_API_KEY=your_pinecone_api_key
+REDIS_HOST=agent-redis
+REDIS_PORT=6379
 ```
 
 ## 5. Running the Stack
@@ -82,6 +84,12 @@ curl http://localhost:7000/healthz
 # {"ok":true}
 ```
 
+Or you can just run.
+```bash
+./scripts/clean_rebuild.sh
+```
+Refer to [12. Automated Clean Rebuild Script (Development Purposes)](#12-automated-clean-rebuild-script-development-purposes)
+
 ## 6. How Per-User Isolation Works
 - The Dispatcher listens on port 7000 and spawns containers dynamically.
 - When you send a request to /u/<user>/chat, a container named agent-<user> is launched.
@@ -91,6 +99,7 @@ curl http://localhost:7000/healthz
     - Independent from other users
 - Each user has isolated long-term memory stored in Pinecone under `user_id`.
   Mem0 ensures that no user can access another user’s memory items.
+- Each user also has isolated short-term memory managed by Redis. Refer to [10. Short-Term Memory with Redis](#10-short-term-memory-with-redis)
 
 Check which containers are active:
 ```bash
@@ -106,7 +115,7 @@ agent-bob                      Up 10 seconds
 ```
 Each user = one isolated agent container.  
 Each session ID = a conversation thread inside that same container.  
-More details are provided in later sections.
+More details are provided in Sections 9–11.
 
 ## 7. Sending Chat Requests
 ```bash
@@ -188,8 +197,7 @@ curl -X POST "http://localhost:7000/u/alice/chat?session_id=s2" \
   -H "Content-Type: application/json" \
   -d '{"message":"Summarize what you know about Docker networking"}'
 ```
-Sessions are currently stateless (they don’t retain memory).
-In later phases, session_id will link to Redis or another memory store so agents can “remember” previous messages.
+Sessions now maintain short-term memory via Redis (last 5 turns) and long-term memory via mem0.
 
 ### Example Success Output
 ```bash
@@ -209,12 +217,12 @@ retrieve these memories and include them in the system prompt.
 
 
 ## 8. Model Configuration
-The OSS models (gpt-oss-20b and gpt-oss-120b) support tool selection natively, making them suitable for agent workflows such as ReAct. This project will mainly use gpt-oss-20b and gpt-oss-120b because of tool calling support. The default model is set to openai.gpt-oss-120b. Information on how to switch models is documented below.
+The OSS models (gpt-oss-20b-1:0 and openai.gpt-oss-120b-1:0) support tool selection natively, making them suitable for agent workflows such as ReAct. This project will mainly use gpt-oss-20b and gpt-oss-120b because of tool calling support. The default model is set to openai.gpt-oss-120b-1:0. Information on how to switch models is documented below.
 
 These are all the models available to use on Bedrock
 | **Category** | **Provider** | **Model ID(s)** | **Purpose / Notes** |
 |---------------|--------------|-----------------|----------------------|
-| **Text Generation (OSS)** | **OpenAI (OSS via Bedrock)** | `openai.gpt-oss-20b`, `openai.gpt-oss-120b` | Open-source LLMs hosted on Bedrock. Both models support structured function/tool calling and are used for ReAct agent planning. |
+| **Text Generation (OSS)** | **OpenAI (OSS via Bedrock)** | `openai.gpt-oss-20b-1:0`, `openai.gpt-oss-120b-1:0` | Open-source LLMs hosted on Bedrock. Both models support structured function/tool calling and are used for ReAct agent planning. |
 | **Text Generation** | **Amazon** | `amazon.titan-text-lite-v1`, `amazon.titan-text-express-v1`, `amazon.nova-pro-v1:0`, `amazon.nova-lite-v1:0`, `amazon.nova-micro-v1:0` | General-purpose LLMs for text generation and reasoning. Titan models support on-demand invocation. |
 | **Image Generation & Editing** | **Stability AI** | `stability.stable-image-*`, `stability.sd3-5-large-v1:0`, `stability.stable-style-transfer-v1:0` | Image creation, recoloring, style transfer, and background removal. |
 | **Text & Image Embeddings** | **Amazon** | `amazon.titan-embed-text-v1`, `amazon.titan-embed-text-v2:0`, `amazon.titan-embed-image-v1` | Converts text or images into dense vector representations for search and semantic tasks. |
@@ -234,7 +242,7 @@ In docker-compose.yml, update:
 
 to a different model
 ```bash
-- BEDROCK_MODEL_ID=openai.gpt-oss-120b
+- BEDROCK_MODEL_ID=openai.gpt-oss-120b-1:0
 ```
 
 Then rebuild and restart the stack
@@ -269,7 +277,7 @@ else:
 If you switch to a different model family (for example, from a text model to an image model),
 you’ll need to update the code so the JSON request matches that model’s API format.
 
-## Long-Term Memory with Mem0
+## 9. Long-Term Memory with Mem0
 
 This system uses **Mem0** to provide long-term semantic memory for each user.
 Mem0 automatically:
@@ -295,7 +303,75 @@ Memories are saved inside a Pinecone collection named `cse291a`, using metadata:
 
 Each user’s memories are isolated from other users.
 
-## 9. High-Level Architecture
+## 10. Short-Term Memory with Redis
+
+In addition to Mem0 long-term memory, the system now includes short-term working memory using Redis.
+Redis is used to capture the last 5 conversational turns within a single session, allowing the agent to maintain continuity across messages. Redis in this setup is ephemeral (no volume). Rebuilding or restarting the Redis container clears STM automatically.
+Why Redis?:
+- Extremely fast in-memory data store
+- Perfect for storing recent conversation history
+- Lightweight and easy to reset/evict
+- Isolated per-user and per-session
+- Avoids long prompt growth
+- Complements Mem0 (long-term memory)
+
+### Redis Setup
+
+Redis runs as a dedicated container in docker-compose.yml:
+``` bash
+redis:
+  image: redis:7
+  container_name: agent-redis
+  ports:
+    - "6379:6379"
+```
+
+All agent containers connect via the internal Docker network using:
+``` bash
+REDIS_HOST=agent-redis
+REDIS_PORT=6379
+```
+
+### How Keys Are Stored
+Each conversation thread is stored under a unique Redis key:
+``` bash
+session:{user_id}_{session_id}:history
+```
+
+Example keys:
+``` bash
+session:alice_s2:history
+session:melvyn_s2:history
+```
+
+Each entry is stored as a JSON object:
+``` json
+{"role": "human", "text": "I ate 5 apples today."}
+{"role": "assistant", "text": "You have 5 apples left."}
+```
+Each user’s memories are isolated from other users.
+For information on how to debug Redis, refer to [13. Debugging Section](#13-debugging-section)
+
+### STM Window Size
+Redis stores only the last 5 messages of a session:
+- Prevents unlimited growth
+- Ensures fast prompt construction
+- Mirrors a sliding window short-term memory
+
+### Example: Viewing STM in Redis
+You can inspect STM in Redis using:
+``` bash
+docker exec -it agent-redis redis-cli
+LRANGE session:alice_s2:history 0 -1
+```
+
+### Isolation
+Redis STM is fully isolated:
+- Different users cannot see each other’s STM
+- Different sessions of the same user do not mix
+- Each STM key belongs only to one thread
+
+## 11. High-Level Architecture
 ```bash
                  ┌──────────────────────────────────────────────┐
                  │                  Dispatcher                  │
@@ -310,6 +386,7 @@ Each user’s memories are isolated from other users.
 │ Port 8080    │         │ Port 8080    │          │ Port 8080    │
 │ Bedrock API  │         │ Bedrock API  │          │ Bedrock API  │
 │ Mem0         │         │ Mem0         │          │ Mem0         │
+│ Redis        │         │ Redis        │          │ Redis        │
 └──────────────┘         └──────────────┘          └──────────────┘
        │                        │                         │
        ▼                        ▼                         ▼
@@ -318,19 +395,19 @@ Each user’s memories are isolated from other users.
              │  (Titan, OSS 20b/120b, Cohere, Future)    │
              └───────────────────────────────────────────┘
 ```
-- Dispatcher: central manager. Handles routing, spawns agent containers.
+- Dispatcher: routes requests and launches per-user containers
+- Agent container: contains
+  - ReAct agent
+  - Mem0 (Pinecone LTM)
+  - Redis STM
+  - Bedrock model client
+- Shared network: isolates containers while enabling Redis access
+- State separation:
+  - STM per session
+  - LTM per user
+  - No cross-user contamination
 
-- Agent Template: base container image cloned per user.
-Each instance calls Bedrock independently.
-
-- Network: all containers share a single Docker bridge network.
-
-Each agent container also includes:
-
-- **Mem0 long-term memory client** (Pinecone vector store)
-- **OpenAI LLM for memory extraction**
-
-## 10. Automated Clean Rebuild Script (Development Purposes)
+## 12. Automated Clean Rebuild Script (Development Purposes)
 Whenever you update agent logic (e.g., react_agent.py), tools, memory handling, or model configuration, you should run a clean rebuild so every user container is recreated with the latest code.
 A helper script is included:
 
@@ -339,12 +416,25 @@ Run a full clean rebuild
 ./scripts/clean_rebuild.sh
 ```
 What the script does:
-1. The script performs all required steps:
-2. Stops the entire stack
-3. Removes all agent-<user> containers
-4. Rebuilds Docker images without cache
-5. Starts the stack
-6. Checks dispatcher health
-7. Prints instructions for generating the first user container
+1. Stops the entire stack
+2. Removes all agent-<user> containers
+3. Rebuilds Docker images without cache
+4. Starts the stack
+5. Checks dispatcher health
+6. Prints instructions for generating the first agent container
 
 This ensures that every user container (agent-alice, agent-bob) is recreated from the newest agent template image.
+
+## 13. Debugging Section
+### Debugging Redis STM
+To inspect short-term memory:
+```bash
+docker exec -it agent-redis redis-cli
+KEYS *
+LRANGE session:alice_s1:history 0 -1
+```
+
+To remove all the memory:
+``` bash
+docker exec -it agent-redis redis-cli FLUSHALL
+```

@@ -11,6 +11,7 @@ import os
 import json
 import re
 from mem0 import Memory
+import redis
 
 
 # Import our custom tools
@@ -172,8 +173,10 @@ class LangGraphReActAgent:
                 }
             }
     }
-
+        # Initialize Mem0 for LTM
         self.mem = Memory.from_config(config)
+        # Initialize Redis for STM
+        self.redis = redis.Redis(host="redis", port=6379, decode_responses=True)
 
     def extract_memories_from_output(self, text: str):
         """
@@ -188,6 +191,20 @@ class LangGraphReActAgent:
         except Exception:
             return []
         
+
+    # Redis Functions for STM
+    def load_stm(self, thread_id):
+        key = f"session:{thread_id}:history"
+        raw = self.redis.lrange(key, 0, -1)
+        return [json.loads(item) for item in raw]
+
+    def store_stm(self, thread_id, role, text, window=5):
+        key = f"session:{thread_id}:history"
+        payload = json.dumps({"role": role, "text": text})
+        self.redis.rpush(key, payload)
+        self.redis.ltrim(key, -window, -1)  # keep last 5 entries
+    # End of Redis Functions for STM
+
     def run(self, message: str, thread_id: Optional[str] = None, system_prompt: Optional[str] = None) -> dict:
         """Run the agent with a message.
 
@@ -211,17 +228,25 @@ class LangGraphReActAgent:
             )
             print("Retrieved memory:", retrieved)
             
+            # Load Redis short-term memory
+            stm_history = self.load_stm(thread_id)
+            stm_block = "\n".join(
+                f"{item['role']}: {item['text']}"
+                for item in stm_history
+            ) or "No recent short-term memory."
+
             memory_block = "\n".join(f"- {m['memory']}" for m in retrieved.get("results", [])) if retrieved else "No relevant memory retrieved."
             memory_prefix = f"""
-    You are a ReAct agent with semantic memory.
+                            You are a ReAct agent with semantic memory.
 
-    Here are memories relevant to the user's message.
-    Use them *only if relevant*:
-
-    --- Retrieved Memory ---
-    {memory_block}
-    ------------------------
-    """
+                            Here are memories relevant to the user's message.
+                            Use them *only if relevant*:
+                            ### Short-Term Memory
+                            {stm_block}
+                            --- Retrieved Memory ---
+                            {memory_block}
+                            ------------------------
+                            """
 
             config = {"configurable": {"thread_id": thread_id or "default"}}
 
@@ -263,6 +288,9 @@ class LangGraphReActAgent:
             for mem_item in new_memories:
                 self.mem.add(messages=mem_item, user_id=user_id, run_id=session_id)
 
+            # Store STM
+            self.store_stm(thread_id, "human", message)
+            self.store_stm(thread_id, "assistant", final_text)
             return {
                 "response_text": final_text,
                 "reasoning": reasoning_part,

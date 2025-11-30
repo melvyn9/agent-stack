@@ -24,6 +24,15 @@ services:
     env_file:
       - .env
 
+  redis:
+    image: redis:7
+    container_name: agent-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - agent_net
+    restart: always
+
 networks:
   agent_net:
     driver: bridge
