@@ -2,7 +2,7 @@ import os, time, httpx, docker
 from fastapi import FastAPI, Request, HTTPException
 
 AGENT_IMAGE = os.getenv("AGENT_IMAGE","agent-template:latest")
-NETWORK_NAME = os.getenv("NETWORK_NAME","agent_net")
+NETWORK_NAME = os.getenv("NETWORK_NAME","agent-stack_agent_net")
 BEDROCK_REGION = os.getenv("AWS_REGION", "us-west-2")
 BEDROCK_MODEL_ID = os.getenv("BEDROCK_MODEL_ID", "amazon.titan-text-lite-v1")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")

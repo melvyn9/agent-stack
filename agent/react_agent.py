@@ -172,11 +172,15 @@ class LangGraphReActAgent:
                     "embedding_dims": 1536
                 }
             }
-    }
+        }
         # Initialize Mem0 for LTM
         self.mem = Memory.from_config(config)
         # Initialize Redis for STM
-        self.redis = redis.Redis(host="redis", port=6379, decode_responses=True)
+        self.redis = redis.Redis(
+                        host=os.getenv("REDIS_HOST", "agent-redis"),
+                        port=int(os.getenv("REDIS_PORT", 6379)),
+                        decode_responses=True
+                    )
 
     def extract_memories_from_output(self, text: str):
         """
@@ -201,8 +205,39 @@ class LangGraphReActAgent:
     def store_stm(self, thread_id, role, text, window=5):
         key = f"session:{thread_id}:history"
         payload = json.dumps({"role": role, "text": text})
+
+        # Push new STM message
         self.redis.rpush(key, payload)
-        self.redis.ltrim(key, -window, -1)  # keep last 5 entries
+
+        # If STM length exceeds window, migrate oldest pair to Mem0
+        current_len = self.redis.llen(key)
+
+        if current_len > window:
+            # Pop oldest → first of pair
+            first_raw = self.redis.lpop(key)
+            first = json.loads(first_raw)
+
+            # Peek next message (do NOT pop unless it's assistant)
+            next_raw = self.redis.lindex(key, 0)
+            if next_raw:
+                next_msg = json.loads(next_raw)
+            else:
+                next_msg = None
+
+            # Only pop and store pair if it is human→assistant
+            if first["role"] == "human" and next_msg and next_msg["role"] == "assistant":
+                # Pop the assistant message now that we know it's paired
+                second_raw = self.redis.lpop(key)
+                second = json.loads(second_raw)
+
+                user_id, session_id = thread_id.split("_", 1)
+                mem_item = f"Question:{first['text']}, Agent Answer:{second['text']}"
+                self.mem.add(messages=mem_item, user_id=user_id, run_id=session_id)
+
+
+        # Ensure STM keeps only the last `window` entries
+        self.redis.ltrim(key, -window, -1)
+
     # End of Redis Functions for STM
 
     def run(self, message: str, thread_id: Optional[str] = None, system_prompt: Optional[str] = None) -> dict:
@@ -235,7 +270,11 @@ class LangGraphReActAgent:
                 for item in stm_history
             ) or "No recent short-term memory."
 
-            memory_block = "\n".join(f"- {m['memory']}" for m in retrieved.get("results", [])) if retrieved else "No relevant memory retrieved."
+            results = retrieved.get("results", []) if retrieved else []
+            if results:
+                memory_block = "\n".join(f"- {item.get('memory', '')}" for item in results)
+            else:
+                memory_block = "No relevant memory retrieved."
             memory_prefix = f"""
                             You are a ReAct agent with semantic memory.
 
@@ -282,13 +321,8 @@ class LangGraphReActAgent:
             if "<reasoning>" in final_text:
                 reasoning_part = final_text.split("<reasoning>")[1].split("</reasoning>")[0]
                 final_text = final_text.replace(f"<reasoning>{reasoning_part}</reasoning>", "").strip()
-            
-            # Add new memory
-            new_memories = [f"Question:{message}, Agent Answer: {final_text}"]
-            for mem_item in new_memories:
-                self.mem.add(messages=mem_item, user_id=user_id, run_id=session_id)
 
-            # Store STM
+            # Store STM (LTM handled inside store_stm overflow logic)
             self.store_stm(thread_id, "human", message)
             self.store_stm(thread_id, "assistant", final_text)
             return {

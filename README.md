@@ -56,7 +56,7 @@ agent-stack/
 ```
 
 ## 4. Environment Variables
-The .env file in the root directory stores temporary AWS Educate credentials. Go to https://ets-apps.ucsd.edu/individual/CSE291A_FA25_D00 and click "Generate API Keys (for CLI/scripting) for your own API keys. Mem0 uses OpenAI models for memory extraction and embedding. Without OPENAI_API_KEY, long-term memory will not work. This is also required for Mem0 long-term memory storage using Pinecone. Redis requires no API key and works immediately inside Docker.
+The .env file in the root directory stores temporary AWS Educate credentials. Go to https://ets-apps.ucsd.edu/individual/CSE291A_FA25_D00 and click "Generate API Keys (for CLI/scripting) for your own API keys. Mem0 uses OpenAI models for memory extraction and embedding. Without OPENAI_API_KEY, long-term memory (LTM) will not work. This is also required for Mem0 long-term memory storage using Pinecone. Redis requires no API key and works immediately inside Docker.
 ```bash
 AWS_ACCESS_KEY_ID= Your Access Key ID
 AWS_SECRET_ACCESS_KEY= Your Secret Access Key
@@ -97,9 +97,9 @@ Refer to [12. Automated Clean Rebuild Script (Development Purposes)](#12-automat
     - Connected to the shared network agent-stack_agent_net
     - Given isolated environment variables (AWS keys, model ID, region)
     - Independent from other users
-- Each user has isolated long-term memory stored in Pinecone under `user_id`.
+- Each user has isolated LTM stored in Pinecone under `user_id`.
   Mem0 ensures that no user can access another user’s memory items.
-- Each user also has isolated short-term memory managed by Redis. Refer to [10. Short-Term Memory with Redis](#10-short-term-memory-with-redis)
+- Each user also has isolated short-term memory (STM) managed by Redis. Refer to [10. Short-Term Memory with Redis](#10-short-term-memory-with-redis)
 
 Check which containers are active:
 ```bash
@@ -197,7 +197,7 @@ curl -X POST "http://localhost:7000/u/alice/chat?session_id=s2" \
   -H "Content-Type: application/json" \
   -d '{"message":"Summarize what you know about Docker networking"}'
 ```
-Sessions now maintain short-term memory via Redis (last 5 turns) and long-term memory via mem0.
+Sessions now maintain STM via Redis (last 5 turns) and LTM via mem0.
 
 ### Example Success Output
 ```bash
@@ -303,17 +303,31 @@ Memories are saved inside a Pinecone collection named `cse291a`, using metadata:
 
 Each user’s memories are isolated from other users.
 
+### Automatic Population from Redis
+Mem0 does not just store memory extracted from LLM output, it also receives Q/A pairs promoted from Redis when STM overflows.
+
+Each pair is stored using the consistent format:
+``` bash
+"Question:{human_text}, Agent Answer:{assistant_text}"
+```
+
+This ensures that:
+- LTM stays compact and structured.
+- Knowledge is retained beyond STM’s 5-message limit.
+- Mem0 retrieval improves over time as overflowed context accumulates.
+
 ## 10. Short-Term Memory with Redis
 
-In addition to Mem0 long-term memory, the system now includes short-term working memory using Redis.
-Redis is used to capture the last 5 conversational turns within a single session, allowing the agent to maintain continuity across messages. Redis in this setup is ephemeral (no volume). Rebuilding or restarting the Redis container clears STM automatically.
+In addition to Mem0 LTM, the system now includes short-term working memory using Redis.
+Redis is used to capture the last 5 conversational turns within a single session, allowing the agent to maintain continuity across messages. Anything older is automatically promoted to long-term
+memory in Mem0. Redis in this setup is ephemeral (no volume). Rebuilding or restarting the Redis container clears STM automatically.
 Why Redis?:
 - Extremely fast in-memory data store
 - Perfect for storing recent conversation history
 - Lightweight and easy to reset/evict
 - Isolated per-user and per-session
 - Avoids long prompt growth
-- Complements Mem0 (long-term memory)
+- Complements Mem0
 
 ### Redis Setup
 
@@ -356,7 +370,25 @@ For information on how to debug Redis, refer to [13. Debugging Section](#13-debu
 Redis stores only the last 5 messages of a session:
 - Prevents unlimited growth
 - Ensures fast prompt construction
-- Mirrors a sliding window short-term memory
+- Mirrors a sliding window STM
+
+### Automatic STM to LTM Eviction
+The agent now includes a memory migration mechanism that connects short-term Redis memory with long-term Mem0 memory:
+
+- Redis keeps only the last 5 messages (configurable).
+- When a new message arrives and STM exceeds 5 entries, the oldest human-assistant pair is removed (“evicted”) from Redis.
+- This pair is automatically converted into a LTM item in Mem0 using the format:
+```bash
+"Question:{human_text}, Agent Answer:{assistant_text}"
+```
+- Only valid pairs (human followed by assistant) are stored.
+- Misaligned entries (two human messages in a row) are dropped to avoid corrupting LTM.
+- This creates a rolling memory system where:
+  - Redis stores recent conversational context.
+  - Mem0 stores distilled long-term knowledge.
+  - Duplicate LTM entries are avoided because only flushed pairs are stored.
+
+This mechanism allows for conversations to continue indefinitely without Redis growing unbounded, while every meaningful Q/A exchange is preserved for future retrieval.
 
 ### Example: Viewing STM in Redis
 You can inspect STM in Redis using:
@@ -406,6 +438,8 @@ Redis STM is fully isolated:
   - STM per session
   - LTM per user
   - No cross-user contamination
+- STM to LTM Migration:
+  - When Redis exceeds its 5-message window, the oldest human-assistant pair is promoted to Mem0 as a LTM entry. This creates a continuous pipeline of ephemeral to persistent memory. Mem0 never receives raw logs and only receives structured human→assistant pairs distilled from overflowed STM.
 
 ## 12. Automated Clean Rebuild Script (Development Purposes)
 Whenever you update agent logic (e.g., react_agent.py), tools, memory handling, or model configuration, you should run a clean rebuild so every user container is recreated with the latest code.
