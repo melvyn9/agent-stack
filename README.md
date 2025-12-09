@@ -18,44 +18,61 @@ Each user gets their **own isolated container** that connects to **AWS Bedrock**
 - **EBS Volume:** Grow the EBS volume from 8 GB to 64 GB. 
 
 ## 2. System Setup on EC2
-The following has already been installed on the instance. Only do this if starting from a brand new instance or if [5. Running the Stack](#5-running-the-stack) does not work.  
-Install dependencies and tools:
-```bash
-sudo apt-get update -y && sudo apt-get upgrade -y
-sudo apt-get install -y ca-certificates curl gnupg lsb-release unzip jq
-```
-
-Install Docker & Compose
-```bash
-sudo apt-get update -y
-sudo apt-get install -y ca-certificates curl gnupg
-sudo install -m 0755 -d /etc/apt/keyrings
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
-  https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
-  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-sudo apt-get update -y
-
-# Install Docker Engine + Compose
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-
-# Enable Docker for current user
-sudo usermod -aG docker $USER
-newgrp docker
-```
-
-Install AWS CLI
-```bash
-curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip
-unzip -q awscliv2.zip && sudo ./aws/install && rm -rf aws awscliv2.zip
-```
 
 Clone this GitHub Repo
 ```bash
 git clone https://github.com/melvyn9/agent-stack
+cd agent-stack
 ```
 
-## 3. Repository Structure
+Run the setup script
+```bash
+chmod +x setup.sh
+./setup.sh
+```
+
+Activate Docker Permissions
+```bash
+newgrp docker
+docker ps
+```
+
+## 3. Environment Variables
+Add .env file in the root directory containing temporary AWS Educate credentials. Go to https://ets-apps.ucsd.edu/individual/CSE291A_FA25_D00 and click "Generate API Keys (for CLI/scripting) for your own API keys. Mem0 uses OpenAI models for memory extraction and embedding. Without OPENAI_API_KEY, long-term memory (LTM) will not work. This is also required for Mem0 long-term memory storage using Pinecone. Redis requires no API key and works immediately inside Docker.
+```bash
+AWS_ACCESS_KEY_ID= Your Access Key ID
+AWS_SECRET_ACCESS_KEY= Your Secret Access Key
+AWS_SESSION_TOKEN= Your Session Key
+AWS_REGION=us-west-2
+
+OPENAI_API_KEY=your_openai_api_key
+BEDROCK_MODEL_ID=openai.gpt-oss-120b-1:0
+PINECONE_API_KEY=your_pinecone_api_key
+
+REDIS_HOST=agent-redis
+REDIS_PORT=6379
+```
+
+## 4. Running the Stack
+Build and Start
+```bash
+cd ~/agent-stack
+docker compose up -d --build
+```
+
+Check Dispatcher Health:
+```bash
+curl http://localhost:7000/healthz
+# {"ok":true}
+```
+
+Or you can just run the helper script.
+```bash
+./scripts/clean_rebuild.sh
+```
+Refer to [12. Automated Clean Rebuild Script (Development Purposes)](#12-automated-clean-rebuild-script-development-purposes)
+
+## 5. Repository Structure
 ```bash
 agent-stack/
 ├─ agent/               # Template for user-specific agent containers
@@ -69,41 +86,6 @@ agent-stack/
 ├─ docker-compose.yml   # Service definitions for Dispatcher and Agent template
 └─ README.md            # This documentation
 ```
-
-## 4. Environment Variables
-The .env file in the root directory stores temporary AWS Educate credentials. Go to https://ets-apps.ucsd.edu/individual/CSE291A_FA25_D00 and click "Generate API Keys (for CLI/scripting) for your own API keys. Mem0 uses OpenAI models for memory extraction and embedding. Without OPENAI_API_KEY, long-term memory (LTM) will not work. This is also required for Mem0 long-term memory storage using Pinecone. Redis requires no API key and works immediately inside Docker.
-```bash
-AWS_ACCESS_KEY_ID= Your Access Key ID
-AWS_SECRET_ACCESS_KEY= Your Secret Access Key
-AWS_SESSION_TOKEN= Your Session Key
-AWS_REGION=us-west-2
-# Required for Mem0 long-term memory (LLM extraction + embeddings)
-OPENAI_API_KEY=your_openai_api_key
-BEDROCK_MODEL_ID=openai.gpt-oss-120b-1:0
-PINECONE_API_KEY=your_pinecone_api_key
-REDIS_HOST=agent-redis
-REDIS_PORT=6379
-```
-
-## 5. Running the Stack
-Build and Start
-```bash
-cd ~/agent-stack
-docker compose build
-docker compose up -d
-```
-
-Check Service Health:
-```bash
-curl http://localhost:7000/healthz
-# {"ok":true}
-```
-
-Or you can just run.
-```bash
-./scripts/clean_rebuild.sh
-```
-Refer to [12. Automated Clean Rebuild Script (Development Purposes)](#12-automated-clean-rebuild-script-development-purposes)
 
 ## 6. How Per-User Isolation Works
 - The Dispatcher listens on port 7000 and spawns containers dynamically.
