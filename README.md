@@ -40,6 +40,11 @@ curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.z
 unzip -q awscliv2.zip && sudo ./aws/install && rm -rf aws awscliv2.zip
 ```
 
+Clone this GitHub Repo
+```bash
+git clone https://github.com/melvyn9/agent-stack
+```
+
 ## 3. Repository Structure
 ```bash
 agent-stack/
