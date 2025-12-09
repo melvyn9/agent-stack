@@ -1,7 +1,7 @@
 # Agent Stack — AWS Bedrock Multi-Agent System
 
 This project creates a **multi-container agent framework** on AWS EC2 using **Docker Compose**.  
-Each user gets their **own isolated container** that connects to **AWS Bedrock** (e.g., Titan Text Lite model) to handle AI-based chat requests.
+Each user gets their **own isolated container** that connects to **AWS Bedrock** (Titan Text Lite model) to handle AI-based chat requests.
 
 ---
 
@@ -27,11 +27,21 @@ sudo apt-get install -y ca-certificates curl gnupg lsb-release unzip jq
 
 Install Docker & Compose
 ```bash
+sudo apt-get update -y
+sudo apt-get install -y ca-certificates curl gnupg
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+  https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | \
+  sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+sudo apt-get update -y
+
+# Install Docker Engine + Compose
 sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+
+# Enable Docker for current user
 sudo usermod -aG docker $USER
 newgrp docker
-sudo systemctl enable docker
-sudo systemctl start docker
 ```
 
 Install AWS CLI
