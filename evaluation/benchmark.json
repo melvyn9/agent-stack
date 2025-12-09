@@ -2,8 +2,8 @@
   "benchmark_info": {
     "description": "Test request set for evaluating agent context/memory management - Updated for agent-stack tools",
     "total_users": 2,
-    "total_requests": 34,
-    "requests_per_user": "User1: 18 requests, User2: 16 requests",
+    "total_requests": 44,
+    "requests_per_user": "User1: 26 requests, User2: 18 requests",
     "agent_info": {
       "type": "LangGraph ReAct Agent",
       "llm": "AWS Bedrock - amazon.titan-text-lite-v1",
@@ -126,9 +126,58 @@
             "Must remember which course was selected in turn 8",
             "Should maintain full context across 13 turns"
           ]
+        },
+        {
+          "session_id": "U1_S3",
+          "session_info": {
+            "context_length": "long (8 turns, forces STM eviction)",
+            "tools_required": ["read_file", "fetch_web_page", "calculator"],
+            "memory_requirements": ["STM overflow recall", "no redundant tool use", "fact correction handling"]
+          },
+          "requests": [
+            {
+              "turn": 1,
+              "request": "Read /app/README.md and tell me the default Bedrock model ID."
+            },
+            {
+              "turn": 2,
+              "request": "Fetch https://example.com and give me the page title."
+            },
+            {
+              "turn": 3,
+              "request": "Compute 12*7 and remember it."
+            },
+            {
+              "turn": 4,
+              "request": "Summarize the key setup steps from the README in one sentence."
+            },
+            {
+              "turn": 5,
+              "request": "Actually, my work hours are 10am-7pm (forget any earlier hours)."
+            },
+            {
+              "turn": 6,
+              "request": "Without re-reading the README, what was the default Bedrock model ID? Do not call tools."
+            },
+            {
+              "turn": 7,
+              "request": "Without re-fetching, what was the title from the URL in turn 2? Do not call tools."
+            },
+            {
+              "turn": 8,
+              "request": "Using my 10am-7pm schedule, propose a 7-day learning plan and include the result of 12*7."
+            }
+          ],
+          "baseline_weakness_targets": [
+            "Forces Redis overflow and Mem0 retrieval; must recall Bedrock model ID",
+            "Must avoid redundant tool calls when explicitly told not to",
+            "Must apply corrected schedule (10am-7pm) in later planning",
+            "Must recall calculator result (84) without re-computing or searching",
+            "Should preserve fetched page title without re-fetching"
+          ]
         }
       ],
-      "total_requests": 18
+      "total_requests": 26
     },
     {
       "user_id": "User2_DeveloperProductivity",
@@ -292,9 +341,32 @@
             "Must recall async programming learning goal",
             "Should remember skill level (intermediate) mentioned in S1"
           ]
+        },
+        {
+          "session_id": "U2_S7",
+          "session_info": {
+            "context_length": "short (2 turns, no tools allowed)",
+            "tools_required": [],
+            "memory_requirements": ["inter-session recall without tool use", "numeric recall without re-calculation"]
+          },
+          "requests": [
+            {
+              "turn": 1,
+              "request": "Without using any tools or searching, tell me my tech stack and learning goal from our earlier sessions."
+            },
+            {
+              "turn": 2,
+              "request": "Also without tools, recall the minutes-per-day number you calculated when I said I would study 10 hours per week. Do not recalculate or search; just tell me the number."
+            }
+          ],
+          "baseline_weakness_targets": [
+            "Must recall tech stack (Python, JavaScript) and async programming goal purely from memory",
+            "Must surface prior calculation (~85 minutes/day) without invoking calculator or searches",
+            "Tool calls should be zero in this session; any tool use counts as failure"
+          ]
         }
       ],
-      "total_requests": 16
+      "total_requests": 18
     }
   ],
   "evaluation_framework": {
@@ -347,7 +419,12 @@
       "User2_S5_Turn5": "Agent likely won't remember the productivity tools from S2",
       "User2_S6_Turn1": "Agent likely won't recall tech stack (Python/JavaScript) from profile",
       "User2_S3_Turn3": "Agent may lose context of work schedule stated in turn 1",
-      "User1_S1_Turn5": "Agent may forget the calculated memory size from turn 3"
+      "User1_S1_Turn5": "Agent may forget the calculated memory size from turn 3",
+      "User1_S3_Turn6": "Agent may fail to recall the Bedrock model ID after STM eviction without re-reading",
+      "User1_S3_Turn7": "Agent may re-fetch or fail to recall the page title without tools",
+      "User1_S3_Turn8": "Agent may ignore corrected 10am-7pm schedule or re-compute 12*7 instead of recalling 84",
+      "User2_S7_Turn1": "Agent may fail to recall tech stack and async goal without tools",
+      "User2_S7_Turn2": "Agent may fail to recall the ~85 minutes/day calculation without calculator/search"
     }
   },
   "testing_procedure": {

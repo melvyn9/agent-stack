@@ -194,6 +194,8 @@ class BaselineEvaluator:
             'context_loss': False,
             'context_loss_description': None,
             'redundant_tool_calls': self.detect_redundant_tools(tool_calls, conversation_history),
+            'tool_violation': False,
+            'tool_violation_description': None,
             'notes': ""
         }
 
@@ -201,6 +203,12 @@ class BaselineEvaluator:
         turn_eval.update(self.auto_detect_issues(
             user_request, agent_response, turn_num, session_info
         ))
+
+        # Flag tool usage when tools should not be used
+        allowed_tools = session_info.get('session_info', {}).get('tools_required', [])
+        if isinstance(allowed_tools, list) and len(allowed_tools) == 0 and tool_calls:
+            turn_eval['tool_violation'] = True
+            turn_eval['tool_violation_description'] = "Tools were invoked in a no-tools session"
 
         return turn_eval
 
