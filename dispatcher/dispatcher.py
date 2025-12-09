@@ -24,13 +24,29 @@ def ensure_agent(c,user):
         return name
     except docker.errors.NotFound:
         env = {
+                # AWS credentials (required for Bedrock)
+                "AWS_ACCESS_KEY_ID": os.getenv("AWS_ACCESS_KEY_ID", ""),
+                "AWS_SECRET_ACCESS_KEY": os.getenv("AWS_SECRET_ACCESS_KEY", ""),
+                "AWS_SESSION_TOKEN": os.getenv("AWS_SESSION_TOKEN", ""),
+                "AWS_REGION": os.getenv("AWS_REGION", "us-west-2"),
+
+                # Bedrock model config
                 "BEDROCK_REGION": BEDROCK_REGION,
                 "BEDROCK_MODEL_ID": BEDROCK_MODEL_ID,
+
+                # OpenAI (for Mem0 LTM extraction)
                 "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY", ""),
-                "AWS_REGION": os.getenv("AWS_REGION", "us-west-2"),
+
+                # Memory storage
+                "PINECONE_API_KEY": os.getenv("PINECONE_API_KEY", ""),
+
+                # External search tools
                 "TAVILY_API_KEY": os.getenv("TAVILY_API_KEY", ""),
                 "SERPAPI_API_KEY": os.getenv("SERPAPI_API_KEY", ""),
-                "PINECONE_API_KEY": os.getenv("PINECONE_API_KEY", "")
+
+                # Redis STM
+                "REDIS_HOST": os.getenv("REDIS_HOST", "agent-redis"),
+                "REDIS_PORT": os.getenv("REDIS_PORT", "6379"),
             }
         cont=c.containers.run(AGENT_IMAGE,name=name,detach=True,environment=env,network=NETWORK_NAME)
         # Wait longer and retry to ensure container is ready
