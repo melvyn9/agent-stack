@@ -202,7 +202,17 @@ class LangGraphReActAgent:
         raw = self.redis.lrange(key, 0, -1)
         return [json.loads(item) for item in raw]
 
-    def store_stm(self, thread_id, role, text, window=5):
+    def store_stm(
+        self,
+        thread_id,
+        role,
+        text,
+        window=5,
+        user_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        share: bool = False,
+        shared_with: Optional[List[str]] = None,
+    ):
         key = f"session:{thread_id}:history"
         payload = json.dumps({"role": role, "text": text})
 
@@ -230,9 +240,19 @@ class LangGraphReActAgent:
                 second_raw = self.redis.lpop(key)
                 second = json.loads(second_raw)
 
-                user_id, session_id = thread_id.split("_", 1)
+                resolved_user, resolved_session = user_id, session_id
+                if not resolved_user or not resolved_session:
+                    resolved_user, resolved_session = thread_id.split("_", 1)
+
                 mem_item = f"Question:{first['text']}, Agent Answer:{second['text']}"
-                self.mem.add(messages=mem_item, user_id=user_id, run_id=session_id)
+                self._add_memory_for_users(
+                    mem_item=mem_item,
+                    owner_user_id=resolved_user,
+                    session_id=resolved_session,
+                    share=share,
+                    shared_with=shared_with or [],
+                    source="stm_eviction",
+                )
 
 
         # Ensure STM keeps only the last `window` entries
@@ -240,13 +260,106 @@ class LangGraphReActAgent:
 
     # End of Redis Functions for STM
 
-    def run(self, message: str, thread_id: Optional[str] = None, system_prompt: Optional[str] = None) -> dict:
+    def _add_memory_for_users(
+        self,
+        mem_item: str,
+        owner_user_id: str,
+        session_id: Optional[str],
+        share: bool,
+        shared_with: List[str],
+        source: str,
+    ):
+        """Store memory for owner and optionally shared recipients."""
+        targets = [
+            {
+                "user_id": owner_user_id,
+                "run_id": session_id,
+                "visibility": "private" if not share else "shared",
+            }
+        ]
+
+        if share and shared_with:
+            for target in shared_with:
+                targets.append(
+                    {
+                        "user_id": target,
+                        "run_id": None,  # make shared memories available across sessions
+                        "visibility": "shared",
+                    }
+                )
+
+        metadata = {
+            "owner": owner_user_id,
+            "visibility": "shared" if share else "private",
+            "shared_with": shared_with,
+            "source": source,
+        }
+
+        for target in targets:
+            try:
+                # Skip duplicate entries for same user/visibility/memory text
+                existing = self._search_memories(
+                    query=mem_item,
+                    user_id=target["user_id"],
+                    run_id=target["run_id"],
+                    visibility_filter=target["visibility"],
+                    limit=1,
+                )
+                if existing:
+                    continue
+                self.mem.add(
+                    messages=mem_item,
+                    user_id=target["user_id"],
+                    run_id=target["run_id"],
+                    metadata={**metadata, "visibility": target["visibility"]},
+                )
+            except Exception as e:
+                print(f"Error adding memory for user {target['user_id']}: {e}")
+
+    def _search_memories(
+        self,
+        query: str,
+        user_id: str,
+        run_id: Optional[str],
+        visibility_filter: Optional[str] = None,
+        limit: int = 3,
+    ) -> List[Dict[str, Any]]:
+        """Search Mem0 with optional visibility filtering."""
+        try:
+            retrieved = self.mem.search(
+                query=query,
+                user_id=user_id,
+                run_id=run_id,
+                limit=limit,
+            )
+            results = retrieved.get("results", []) if retrieved else []
+            if visibility_filter:
+                results = [
+                    r
+                    for r in results
+                    if r.get("metadata", {}).get("visibility") == visibility_filter
+                ]
+            return results
+        except Exception as e:
+            print(f"Error searching memories: {e}")
+            return []
+
+    def run(
+        self,
+        message: str,
+        thread_id: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+        share: bool = False,
+        shared_with: Optional[List[str]] = None,
+    ) -> dict:
         """Run the agent with a message.
 
         Args:
             message: The user message
             thread_id: Unique identifier for the conversation thread
             system_prompt: Optional system prompt to override default behavior
+            share: Whether to mark new memories as shared
+            shared_with: List of user IDs allowed to access the shared memory
 
         Returns:
             The agent's response or error information
@@ -255,13 +368,22 @@ class LangGraphReActAgent:
             user_id, session_id = thread_id.split("_", 1) if thread_id else ("default_user", "default_session")
             
             # Retrieve relevant memory
-            retrieved = self.mem.search(
+            private_hits = self._search_memories(
                 query=message,
                 user_id=user_id,
                 run_id=session_id,
+                visibility_filter=None,
                 limit=3,
             )
-            print("Retrieved memory:", retrieved)
+            shared_hits = self._search_memories(
+                query=message,
+                user_id=user_id,
+                run_id=None,
+                visibility_filter="shared",
+                limit=3,
+            )
+            all_hits = private_hits + [h for h in shared_hits if h not in private_hits]
+            print("Retrieved memory:", all_hits)
             
             # Load Redis short-term memory
             stm_history = self.load_stm(thread_id)
@@ -269,10 +391,28 @@ class LangGraphReActAgent:
                 f"{item['role']}: {item['text']}"
                 for item in stm_history
             ) or "No recent short-term memory."
+            stm_strings = {
+                f"Question:{item['text']}"
+                for item in stm_history
+                if item["role"] == "human"
+            } | {
+                f"Agent Answer:{item['text']}"
+                for item in stm_history
+                if item["role"] == "assistant"
+            }
 
-            results = retrieved.get("results", []) if retrieved else []
-            if results:
-                memory_block = "\n".join(f"- {item.get('memory', '')}" for item in results)
+            if all_hits:
+                formatted_hits = []
+                for item in all_hits:
+                    meta = item.get("metadata", {}) if isinstance(item, dict) else {}
+                    visibility = meta.get("visibility", "private")
+                    owner = meta.get("owner", user_id)
+                    shared_marker = f"[{visibility} from {owner}]" if visibility == "shared" else "[private]"
+                    mem_text = item.get("memory", "")
+                    if mem_text in stm_strings:
+                        continue
+                    formatted_hits.append(f"- {shared_marker} {mem_text}")
+                memory_block = "\n".join(formatted_hits) if formatted_hits else "No relevant memory retrieved."
             else:
                 memory_block = "No relevant memory retrieved."
             memory_prefix = f"""
@@ -323,8 +463,38 @@ class LangGraphReActAgent:
                 final_text = final_text.replace(f"<reasoning>{reasoning_part}</reasoning>", "").strip()
 
             # Store STM (LTM handled inside store_stm overflow logic)
-            self.store_stm(thread_id, "human", message)
-            self.store_stm(thread_id, "assistant", final_text)
+            self.store_stm(
+                thread_id,
+                "human",
+                message,
+                user_id=user_id,
+                session_id=session_id,
+                share=share,
+                shared_with=shared_with or [],
+            )
+            self.store_stm(
+                thread_id,
+                "assistant",
+                final_text,
+                user_id=user_id,
+                session_id=session_id,
+                share=share,
+                shared_with=shared_with or [],
+            )
+            # Immediately add to LTM for sharing even if STM window not exceeded
+            if share:
+                try:
+                    mem_item = f"Question:{message}, Agent Answer:{final_text}"
+                    self._add_memory_for_users(
+                        mem_item=mem_item,
+                        owner_user_id=user_id,
+                        session_id=session_id,
+                        share=share,
+                        shared_with=shared_with or [],
+                        source="immediate_share",
+                    )
+                except Exception as e:
+                    print(f"Error sharing immediate memory: {e}")
             return {
                 "response_text": final_text,
                 "reasoning": reasoning_part,

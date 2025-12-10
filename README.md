@@ -207,9 +207,29 @@ curl -X POST "http://localhost:7000/u/bob/chat?session_id=s1" \
  "answer":"Container isolation is useful because it separates applications..."}
 ```
 
+### Sharing memories across users
+- The `/chat` payload accepts optional sharing flags:
+  ```bash
+  curl -X POST "http://localhost:7000/u/alice/chat?session_id=s1" \
+    -H "Content-Type: application/json" \
+    -d '{
+      "message": "Remember this: my project code name is Aurora.",
+      "share": true,
+      "shared_with": ["bob"]
+    }'
+  ```
+- `share:false` (default) keeps memory private. `share:true` requires a non-empty `shared_with` list; the memory is stored using Mem0 for each listed user so they can recall it in their own sessions. These memories are shared immediately allowing Redis STM to stay strictly private.
+- Recipients query normally, e.g.:
+  ```bash
+  curl -X POST "http://localhost:7000/u/bob/chat?session_id=s1" \
+    -H "Content-Type: application/json" \
+    -d '{"message":"What project code name did Alice share?"}'
+  ```
+  The intended front end is a group-based chat UI: users join a group, and messages sent in that group include the appropriate sharing flags for cross-user recall.
+
 Note:
 If OPENAI_API_KEY is set and Mem0 is enabled, each request will automatically
-extract memory and store it in Pinecone. Subsequent requests for the same user
+extract memory and store it in Pinecone. Subsequent requests for the permitted users
 retrieve these memories and include them in the system prompt.
 
 

@@ -1,6 +1,6 @@
 import os
 import json
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from fastapi import FastAPI, Query, HTTPException, Body
 from pydantic import BaseModel
 import boto3
@@ -38,6 +38,8 @@ class ChatRequest(BaseModel):
 class AgentRequest(BaseModel):
     """Request body for agent endpoint"""
     message: str
+    share: bool = False
+    shared_with: Optional[List[str]] = None
 
 
 @app.post("/chat")
@@ -74,10 +76,19 @@ async def run_agent(
     if agent is None:
         raise HTTPException(status_code=503, detail="Agent not initialized")
 
+    if request.share:
+        if not request.shared_with or len(request.shared_with) == 0:
+            raise HTTPException(status_code=400, detail="shared_with must be provided and non-empty when share is true")
+
     try:
         thread_id = f"{user_id}_{session_id}" if user_id and session_id else "default"
 
-        response = agent.run(message=request.message, thread_id=thread_id)
+        response = agent.run(
+            message=request.message,
+            thread_id=thread_id,
+            share=request.share,
+            shared_with=request.shared_with or [],
+        )
         return {
             "result": response,
             "user_id": user_id,
