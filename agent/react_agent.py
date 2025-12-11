@@ -404,11 +404,21 @@ class LangGraphReActAgent:
             if all_hits:
                 formatted_hits = []
                 for item in all_hits:
-                    meta = item.get("metadata", {}) if isinstance(item, dict) else {}
+                    meta: Dict[str, Any] = {}
+                    mem_text = ""
+                    if isinstance(item, dict):
+                        meta = item.get("metadata") or {}
+                        mem_text = (
+                            item.get("memory")
+                            or item.get("text")
+                            or ""
+                        )
+                    else:
+                        mem_text = str(item)
+
                     visibility = meta.get("visibility", "private")
                     owner = meta.get("owner", user_id)
                     shared_marker = f"[{visibility} from {owner}]" if visibility == "shared" else "[private]"
-                    mem_text = item.get("memory", "")
                     if mem_text in stm_strings:
                         continue
                     formatted_hits.append(f"- {shared_marker} {mem_text}")
